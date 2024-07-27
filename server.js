@@ -1,28 +1,39 @@
 const express = require("express");
+const fs = require("fs");
 const app = express();
-const http = require("http");
-const socketIo = require("socket.io");
-
+const https = require("https");
+const server = https.createServer(
+  {
+    key: fs.readFileSync("192.168.1.14-key.pem"),
+    cert: fs.readFileSync("192.168.1.14.pem"),
+  },
+  app
+);
+const io = require("socket.io")(server);
+const port = process.env.PORT || 4000;
+const { v4: uuidv4 } = require("uuid");
+const { ExpressPeerServer } = require("peer");
+const peer = ExpressPeerServer(server, {
+  debug: true,
+});
+app.use("/peerjs", peer);
 app.set("view engine", "ejs");
-
 app.use(express.static("public"));
-
 app.get("/", (req, res) => {
-  res.render("index", { RoomId: "someRoomId" });
+  res.send(uuidv4());
 });
-
-const server = http.Server(app);
-const io = socketIo(server);
-
-server.listen(4000, () => {
-  console.log("Server running on port 4000");
+app.get("/:room", (req, res) => {
+  res.render("index", { RoomId: req.params.room });
 });
-
 io.on("connection", (socket) => {
-  console.log("A user connected");
-
-  socket.on("newUser", (id) => {
-    socket.join("/");
-    socket.to("/").broadcast.emit("userJoined", id);
+  socket.on("newUser", (id, room) => {
+    socket.join(room);
+    socket.to(room).broadcast.emit("userJoined", id);
+    socket.on("disconnect", () => {
+      socket.to(room).broadcast.emit("userDisconnect", id);
+    });
   });
+});
+server.listen(port, "0.0.0.0", () => {
+  console.log("Server running on port : " + port);
 });
